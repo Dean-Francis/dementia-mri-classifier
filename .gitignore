@@ -1,6 +1,8 @@
-# Data folder
+# Data folders
 data/
 oasis_slices/
+disc1/
+images/
 
 # Virtual Environment
 venv/
@@ -24,4 +26,9 @@ __pycache__/
 Thumbs.db
 
 # Generated files
+*.png
+*.jpg
+*.jpeg
+*.csv
 dementia_pipeline_results.png
+metadata.csv

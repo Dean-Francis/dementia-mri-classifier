@@ -13,98 +13,248 @@ from PIL import Image
 import seaborn as sns
 import nibabel as nib
 from pathlib import Path
+import pandas as pd
 
 # ============================================================================
 # STEP 1: EXTRACT 2D SLICES FROM OASIS DATA
 # ============================================================================
 
-def extract_slices_from_oasis(data_root, output_dir, cdr_threshold=0.5):
+def extract_slices_from_oasis(data_root, output_dir, slices_per_subject=5, 
+                               handle_mci='skip'):
     """
-    Load OASIS data, extract 2D slices, and organize into CN/AD folders
+    Load OASIS data, extract LIMITED 2D slices from middle region, 
+    and organize into CN/AD folders with metadata tracking
     
-    CDR = 0 -> CN (Control)
-    CDR > 0 -> AD (Alzheimer's)
+    Parameters:
+    -----------
+    data_root : str
+        Path to OASIS disc1 folder
+    output_dir : str
+        Where to save extracted slices
+    slices_per_subject : int
+        Number of slices to extract per subject (default: 5)
+    handle_mci : str
+        How to handle CDR=0.5 cases:
+        - 'skip': Exclude MCI subjects (default)
+        - 'ad': Treat as AD
+        - 'separate': Create separate MCI folder
+    
+    Returns:
+    --------
+    slice_count : dict
+        Number of slices per class
+    metadata : list
+        List of dicts with subject_id, slice_idx, CDR, label info
     """
+    
+    # Create output directories
     os.makedirs(os.path.join(output_dir, 'CN'), exist_ok=True)
     os.makedirs(os.path.join(output_dir, 'AD'), exist_ok=True)
+    if handle_mci == 'separate':
+        os.makedirs(os.path.join(output_dir, 'MCI'), exist_ok=True)
     
     slice_count = {'CN': 0, 'AD': 0}
+    if handle_mci == 'separate':
+        slice_count['MCI'] = 0
     
-    # Find all subject txt files
-    subject_files = sorted(Path(data_root).glob('*_MR1.txt'))
+    metadata = []
+    subject_stats = {'total': 0, 'processed': 0, 'skipped_mci': 0, 
+                     'failed': 0, 'skipped_no_cdr': 0}
     
-    print(f"Found {len(subject_files)} subjects")
+    # Find all subject directories (OAS1_XXXX_MR1 folders)
+    subject_dirs = sorted([d for d in Path(data_root).iterdir() 
+                          if d.is_dir() and 'OAS1_' in d.name])
     
-    for txt_file in subject_files:
-        # Parse txt file to get CDR and subject ID
-        subject_id = None
-        cdr = None
+    print(f"Found {len(subject_dirs)} subject directories")
+    print(f"Extracting {slices_per_subject} slices per subject\n")
+    
+    for subject_dir in subject_dirs:
+        subject_stats['total'] += 1
         
-        with open(txt_file, 'r') as f:
-            for line in f:
-                if 'SESSION ID:' in line:
-                    subject_id = line.split(':')[1].strip()
-                elif 'CDR:' in line:
-                    cdr = float(line.split(':')[1].strip())
+        # Look for the txt file inside the subject directory
+        txt_files = list(subject_dir.glob('*_MR1.txt'))
         
-        if subject_id is None or cdr is None:
+        if not txt_files:
+            print(f"✗ {subject_dir.name}: No txt file found")
+            subject_stats['failed'] += 1
             continue
         
-        # Determine label
-        label = 'AD' if cdr > 0 else 'CN'
+        txt_file = txt_files[0]
+        subject_id = subject_dir.name
         
-        # Find MPRAGE img/hdr files
-        subject_dir = txt_file.parent / subject_id / 'PROCESSED' / 'MPRAGE'
+        # Parse txt file to get CDR
+        cdr = None
         
-        # Look for SUBJ_111 or similar subdirectories
-        mprage_dirs = list(subject_dir.glob('SUBJ_*')) + list(subject_dir.glob('T88_*'))
+        try:
+            with open(txt_file, 'r') as f:
+                for line in f:
+                    if 'CDR:' in line:
+                        cdr_str = line.split(':')[1].strip()
+                        if cdr_str and cdr_str != '':
+                            cdr = float(cdr_str)
+                            break
+        except Exception as e:
+            print(f"✗ {subject_id}: Error reading txt file - {e}")
+            subject_stats['failed'] += 1
+            continue
         
-        for mprage_subdir in mprage_dirs:
-            # Find img file
+        if cdr is None:
+            print(f"✗ {subject_id}: No CDR value found")
+            subject_stats['skipped_no_cdr'] += 1
+            continue
+        
+        # Determine label based on CDR
+        if cdr == 0:
+            label = 'CN'
+        elif cdr == 0.5:
+            if handle_mci == 'skip':
+                print(f"⊘ {subject_id}: Skipping MCI (CDR=0.5)")
+                subject_stats['skipped_mci'] += 1
+                continue
+            elif handle_mci == 'ad':
+                label = 'AD'
+            elif handle_mci == 'separate':
+                label = 'MCI'
+        else:  # cdr >= 1.0
+            label = 'AD'
+        
+        # Find MPRAGE directory
+        processed_dir = subject_dir / 'PROCESSED' / 'MPRAGE'
+        
+        if not processed_dir.exists():
+            print(f"✗ {subject_id}: PROCESSED/MPRAGE directory not found")
+            subject_stats['failed'] += 1
+            continue
+        
+        # Look for SUBJ_* or T88_* subdirectories
+        mprage_subdirs = list(processed_dir.glob('SUBJ_*')) + list(processed_dir.glob('T88_*'))
+        
+        if not mprage_subdirs:
+            print(f"✗ {subject_id}: No SUBJ_* or T88_* directories found")
+            subject_stats['failed'] += 1
+            continue
+        
+        # Process the first valid subdirectory
+        volume_loaded = False
+        
+        for mprage_subdir in mprage_subdirs:
+            # Find img/hdr files
             img_files = list(mprage_subdir.glob('*.img'))
             hdr_files = list(mprage_subdir.glob('*.hdr'))
             
             if not img_files or not hdr_files:
                 continue
             
-            img_path = str(img_files[0])
+            hdr_path = str(hdr_files[0])
             
             try:
-                # Load img/hdr as NIfTI using nibabel
-                img_data = nib.load(img_path)
+                # Load img/hdr using nibabel
+                img_data = nib.load(hdr_path)
                 volume = img_data.get_fdata()
                 
+                # Remove singleton dimensions
+                volume = np.squeeze(volume)
+                
+                # Ensure it's 3D
+                if len(volume.shape) != 3:
+                    print(f"✗ {subject_id}: Expected 3D, got shape {volume.shape}")
+                    continue
+                
+                # Skip if volume is too small
+                if volume.shape[0] < 50 or volume.shape[1] < 50 or volume.shape[2] < 20:
+                    print(f"✗ {subject_id}: Volume too small {volume.shape}")
+                    continue
+                
                 # Normalize to 0-255
-                volume = (volume - volume.min()) / (volume.max() - volume.min() + 1e-8)
+                volume_min = volume.min()
+                volume_max = volume.max()
+                
+                if volume_max - volume_min < 1e-8:
+                    print(f"✗ {subject_id}: Volume has no contrast")
+                    continue
+                
+                volume = (volume - volume_min) / (volume_max - volume_min)
                 volume = (volume * 255).astype(np.uint8)
                 
-                # Extract all 2D slices
-                for slice_idx in range(volume.shape[2]):
+                # Select middle slices only (avoid edges with skull/air)
+                total_slices = volume.shape[2]
+                middle_start = total_slices // 4  # Start at 25%
+                middle_end = 3 * total_slices // 4  # End at 75%
+                
+                # Select evenly spaced slices from middle region
+                selected_indices = np.linspace(
+                    middle_start, 
+                    middle_end - 1,  # -1 to stay within bounds
+                    slices_per_subject, 
+                    dtype=int
+                )
+                
+                slices_saved = 0
+                
+                for slice_idx in selected_indices:
                     slice_2d = volume[:, :, slice_idx]
                     
-                    # Skip mostly black slices
-                    if np.mean(slice_2d) < 10:
+                    # Quality checks
+                    mean_intensity = np.mean(slice_2d)
+                    std_intensity = np.std(slice_2d)
+                    
+                    # Skip if too dark, too bright, or no contrast
+                    if mean_intensity < 20 or mean_intensity > 200 or std_intensity < 10:
                         continue
                     
                     # Save as PNG
-                    filename = f"{subject_id}_{mprage_subdir.name}_slice{slice_idx:03d}.png"
+                    filename = f"{subject_id}_slice{slice_idx:03d}.png"
                     filepath = os.path.join(output_dir, label, filename)
                     
                     img_pil = Image.fromarray(slice_2d, mode='L')
                     img_pil.save(filepath)
+                    
+                    # Save metadata
+                    metadata.append({
+                        'subject_id': subject_id,
+                        'slice_idx': slice_idx,
+                        'cdr': cdr,
+                        'label': label,
+                        'filename': filename,
+                        'mean_intensity': mean_intensity,
+                        'std_intensity': std_intensity
+                    })
+                    
                     slice_count[label] += 1
+                    slices_saved += 1
                 
-                print(f"✓ {subject_id} ({label}): CDR={cdr}")
+                print(f"✓ {subject_id} ({label}): CDR={cdr}, "
+                      f"volume={volume.shape}, saved {slices_saved} slices")
+                
+                subject_stats['processed'] += 1
+                volume_loaded = True
+                break  # Successfully processed, no need to check other subdirs
                 
             except Exception as e:
-                print(f"✗ Error loading {subject_id}: {e}")
+                print(f"✗ {subject_id}: Error loading volume - {e}")
                 continue
+        
+        if not volume_loaded:
+            subject_stats['failed'] += 1
     
-    print(f"\nExtraction complete!")
-    print(f"CN slices: {slice_count['CN']}")
-    print(f"AD slices: {slice_count['AD']}")
+    # Save metadata to CSV
+    df = pd.DataFrame(metadata)
+    metadata_path = os.path.join(output_dir, 'metadata.csv')
+    df.to_csv(metadata_path, index=False)
     
-    return slice_count
+    print("\n" + "="*60)
+    print("EXTRACTION COMPLETE!")
+    print("="*60)
+    print(f"Total subjects found: {subject_stats['total']}")
+    print(f"Successfully processed: {subject_stats['processed']}")
+    print(f"Skipped (MCI): {subject_stats['skipped_mci']}")
+    print(f"Skipped (no CDR): {subject_stats['skipped_no_cdr']}")
+    print(f"Failed: {subject_stats['failed']}")
+    print("\nSlices extracted:")
+    for label, count in slice_count.items():
+        print(f"  {label}: {count} slices")
+    print(f"\nMetadata saved to: {metadata_path}")
+    print("="*60)
 
 
 # ============================================================================
@@ -280,9 +430,16 @@ def deletion_metric(model, images, labels, attributions, device='cpu',
         
         for i in range(batch_size):
             attr = attributions[i]
-            threshold = np.percentile(np.abs(attr), 100 - (step / steps) * percentile)
-            mask = np.abs(attr) >= threshold
-            perturbed_images[i] *= torch.tensor(mask, dtype=torch.float32)
+            
+            # Calculate how many pixels to remove at this step
+            fraction_to_remove = (step / steps) * (percentile / 100.0)
+            threshold = np.percentile(np.abs(attr), 100 - (fraction_to_remove * 100))
+            
+            # Create mask: 0 where we delete, 1 where we keep
+            mask = (np.abs(attr) < threshold).astype(np.float32)
+            
+            # Apply mask to the image (keeping normalized values)
+            perturbed_images[i, 0] *= torch.tensor(mask, dtype=torch.float32)
         
         with torch.no_grad():
             outputs = model(perturbed_images.to(device))
@@ -303,14 +460,14 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     batch_size = 16
     epochs = 20
-    data_root = '/Users/deanfrancistolero/Desktop/Firuz Kamalov/data/disc1'  # Change this
+    data_root = r'C:\Users\user\Desktop\Convolutional_Neural_Netowork\Dr. Firuz Kamalov\images\disc1'  
     output_dir = 'oasis_slices'
     
     print(f"Using device: {device}")
     
     # Step 1: Extract slices from OASIS
     print("\n=== Extracting 2D Slices from OASIS ===")
-    extract_slices_from_oasis(data_root, output_dir)
+    extract_slices_from_oasis(data_root, output_dir, slices_per_subject=20, handle_mci='ad')
     
     # Step 2: Load dataset
     print("\n=== Loading Dataset ===")
