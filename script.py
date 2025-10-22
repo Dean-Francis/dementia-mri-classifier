@@ -178,8 +178,8 @@ def extract_slices_from_oasis(data_root, output_dir, slices_per_subject=5,
                 
                 # Select middle slices only (avoid edges with skull/air)
                 total_slices = volume.shape[2]
-                middle_start = total_slices // 4  # Start at 25%
-                middle_end = 3 * total_slices // 4  # End at 75%
+                middle_start = total_slices // 3  # Start at 33% (more restrictive)
+                middle_end = 2 * total_slices // 3  # End at 67% (more restrictive)
                 
                 # Select evenly spaced slices from middle region
                 selected_indices = np.linspace(
@@ -194,12 +194,12 @@ def extract_slices_from_oasis(data_root, output_dir, slices_per_subject=5,
                 for slice_idx in selected_indices:
                     slice_2d = volume[:, :, slice_idx]
                     
-                    # Quality checks
+                    # Quality checks - MORE STRICT
                     mean_intensity = np.mean(slice_2d)
                     std_intensity = np.std(slice_2d)
-                    
+
                     # Skip if too dark, too bright, or no contrast
-                    if mean_intensity < 20 or mean_intensity > 200 or std_intensity < 10:
+                    if mean_intensity < 30 or mean_intensity > 180 or std_intensity < 20:
                         continue
                     
                     # Save as PNG
@@ -390,8 +390,10 @@ def train_model(model, train_loader, val_loader, epochs=20, device='cpu'):
 # STEP 5: INTEGRATED GRADIENTS
 # ============================================================================
 
-def compute_integrated_gradients(model, images, labels, device='cpu', steps=50):
+def compute_integrated_gradients(model, images, labels, device='cpu', steps=200):
     """Compute IG attributions for a batch of images"""
+    print(f"Computing IG on device: {device}")  # Add this line
+    print(f"Number of images: {images.shape[0]}, Steps: {steps}")  # Add this too
     ig = IntegratedGradients(model)
     attributions_list = []
     
@@ -524,8 +526,11 @@ def main():
     # Step 5: Compute Integrated Gradients
     print("\n=== Computing Integrated Gradients ===")
     test_images, test_labels = next(iter(test_loader))
+
+    test_images_subset = test_images[:4]
+    test_labels_subset = test_labels[:4]
     attributions = compute_integrated_gradients(model, test_images, 
-                                               test_labels, device=device)
+                                               test_labels, device=device, steps=200)
     print(f"Computed attributions for {len(attributions)} images")
     
     # Step 6: Deletion Metric
@@ -540,37 +545,47 @@ def main():
     # Step 7: Visualizations
     print("\n=== Generating Visualizations ===")
     
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    # Create a larger figure for multiple examples
+    fig = plt.figure(figsize=(16, 12))
     
-    # Loss curves
-    axes[0, 0].plot(train_losses, label='Train')
-    axes[0, 0].plot(val_losses, label='Val')
-    axes[0, 0].set_title('Training & Validation Loss')
-    axes[0, 0].legend()
-    axes[0, 0].set_xlabel('Epoch')
-    axes[0, 0].set_ylabel('Loss')
+    # Plot 1: Loss curves (top left)
+    ax1 = plt.subplot(3, 4, 1)
+    ax1.plot(train_losses, label='Train')
+    ax1.plot(val_losses, label='Val')
+    ax1.set_title('Training & Validation Loss')
+    ax1.legend()
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
     
-    # Deletion curve
-    axes[0, 1].plot(deletion_scores)
-    axes[0, 1].set_title('Deletion Metric (IG)')
-    axes[0, 1].set_xlabel('Deletion Steps')
-    axes[0, 1].set_ylabel('Accuracy Drop')
-    axes[0, 1].grid(True, alpha=0.3)
+    # Plot 2: Deletion curve (top right)
+    ax2 = plt.subplot(3, 4, 2)
+    ax2.plot(deletion_scores)
+    ax2.set_title('Deletion Metric (IG)')
+    ax2.set_xlabel('Deletion Steps')
+    ax2.set_ylabel('Accuracy Drop')
+    ax2.grid(True, alpha=0.3)
     
-    # Sample MRI with IG
-    sample_img = test_images[0].squeeze().numpy()
-    sample_attr = attributions[0]
+    # Plots 3-10: Show 4 MRI samples with their attributions (2 rows of 4)
+    num_samples = min(4, len(test_images))
     
-    axes[1, 0].imshow(sample_img, cmap='gray')
-    axes[1, 0].set_title('Original MRI')
-    axes[1, 0].axis('off')
-    
-    axes[1, 1].imshow(np.abs(sample_attr), cmap='hot')
-    axes[1, 1].set_title('Integrated Gradients Attribution')
-    axes[1, 1].axis('off')
+    for i in range(num_samples):
+        # Original MRI
+        ax_img = plt.subplot(3, 4, 5 + i)
+        sample_img = test_images[i].squeeze().cpu().numpy()
+        ax_img.imshow(sample_img, cmap='gray')
+        ax_img.set_title(f'MRI {i+1} (Label: {test_labels[i].item()})')
+        ax_img.axis('off')
+        
+        # IG Attribution
+        ax_attr = plt.subplot(3, 4, 9 + i)
+        sample_attr = attributions[i]
+        im = ax_attr.imshow(np.abs(sample_attr), cmap='hot')
+        ax_attr.set_title(f'IG Attribution {i+1}')
+        ax_attr.axis('off')
+        plt.colorbar(im, ax=ax_attr, fraction=0.046)
     
     plt.tight_layout()
-    plt.savefig('dementia_pipeline_results.png', dpi=150)
+    plt.savefig('dementia_pipeline_results.png', dpi=150, bbox_inches='tight')
     print("Saved visualization to dementia_pipeline_results.png")
     plt.show()
 
