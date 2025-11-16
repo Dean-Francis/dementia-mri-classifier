@@ -3,6 +3,10 @@ data/
 oasis_slices/
 disc1/
 images/
+dataset/
+*.tar
+*.tar.gz
+*.zip
 
 # Virtual Environment
 venv/
@@ -32,3 +36,4 @@ Thumbs.db
 *.csv
 dementia_pipeline_results.png
 metadata.csv
+
