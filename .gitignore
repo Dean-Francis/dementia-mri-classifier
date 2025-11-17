@@ -3,7 +3,6 @@ data/
 oasis_slices/
 disc1/
 images/
-dataset/
 *.tar
 *.tar.gz
 *.zip

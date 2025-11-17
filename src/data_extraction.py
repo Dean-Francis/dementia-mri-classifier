@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import nibabel as nib 
 import numpy as np
+from PIL import Image
 
 def extract_slices(data_root, output_dir, cdr_threshold=0):
     os.makedirs(os.path.join(output_dir, 'CN'), exist_ok=True)
@@ -15,7 +16,7 @@ def extract_slices(data_root, output_dir, cdr_threshold=0):
     for subject_folder in subject_folders:
         subject_id = subject_folder.name
 
-        txt_file = subject_folder / "f{subject_id}.txt"
+        txt_file = subject_folder / f"{subject_id}.txt"
 
         if not txt_file.exists():
             print(f"Text file does not exist for {subject_id}")
@@ -49,7 +50,7 @@ def extract_slices(data_root, output_dir, cdr_threshold=0):
         existing_slices = [f for f in os.listdir(output_folder) if f.startswith(subject_id)]
         
         if existing_slices:
-            print(f"  ↻ Already processed ({len(existing_slices)} slices found) - skipping")
+            print(f"Already processed ({len(existing_slices)} slices found) - skipping")
             slice_count[label] += len(existing_slices)
             continue
 
@@ -62,7 +63,46 @@ def extract_slices(data_root, output_dir, cdr_threshold=0):
             continue
 
         try:
+            # Load the MRI Scan
             img_data = nib.load(str(img_files[0]))
+            volume = img_data.get_fdata()
+            
+            # Remove Singleton Dimensions
+            volume = np.squeeze(volume)
+
+            print("Brain succesfully loaded. Extracting slices...")
+            
+            volume = (volume - volume.min()) / (volume.max() - volume.min() + 1e-8)
+            volume = (volume * 255).astype(np.uint8)
+
+            num_slices = volume.shape[2]
+
+            # Extract each 2D slice
+            for slice_idx in range(num_slices):
+                slice_2d = volume[:,:,slice_idx]
+
+                # Ignore the black spaces
+                if np.mean(slice_2d) < 10:
+                    continue
+
+                filename = f"{subject_id}_slice{slice_idx:03d}.png"
+                filepath = os.path.join(output_dir, label, filename)
+                
+                # Save as PNG
+                img_pil = Image.fromarray(slice_2d, mode='L')
+                img_pil.save(filepath)
+                
+                slice_count[label] += 1
+                # Print final summary
+                print(f"\n{'='*50}")
+                print(f"Extraction Complete!")
+                print(f"CN slices: {slice_count['CN']}")
+                print(f"AD slices: {slice_count['AD']}")
+                print(f"Total: {slice_count['CN'] + slice_count['AD']}")
+                print(f"{'='*50}\n")
+    
+                return slice_count
         except Exception as e:
             print(e)
             continue
+
