@@ -93,16 +93,18 @@ def extract_slices(data_root, output_dir, cdr_threshold=0):
                 img_pil.save(filepath)
                 
                 slice_count[label] += 1
-                # Print final summary
-                print(f"\n{'='*50}")
-                print(f"Extraction Complete!")
-                print(f"CN slices: {slice_count['CN']}")
-                print(f"AD slices: {slice_count['AD']}")
-                print(f"Total: {slice_count['CN'] + slice_count['AD']}")
-                print(f"{'='*50}\n")
+                
     
-                return slice_count
+
         except Exception as e:
             print(e)
             continue
 
+    # Print final summary
+    print(f"\n{'='*50}")
+    print(f"Extraction Complete!")
+    print(f"CN slices: {slice_count['CN']}")
+    print(f"AD slices: {slice_count['AD']}")
+    print(f"Total: {slice_count['CN'] + slice_count['AD']}")
+    print(f"{'='*50}\n")
+    return slice_count
