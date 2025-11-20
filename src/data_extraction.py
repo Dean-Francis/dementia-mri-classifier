@@ -91,7 +91,6 @@ def extract_slices(data_root: Path, output_dir: Path, cdr_threshold=0):
 
                 filename = f"{subject_id}_slice{slice_idx:03d}.png"
                 filepath = output_dir / label / filename
-                filepath = os.path.join(output_dir, label, filename)
                 
                 # Save as PNG
                 img_pil = Image.fromarray(slice_2d, mode='L')
