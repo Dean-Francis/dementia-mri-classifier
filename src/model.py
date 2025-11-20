@@ -26,3 +26,16 @@ class DementiaCNN(nn.Module):
             nn.ReLU(),
             nn.AdaptiveAvgPool2d((1, 1))  # 28x28 -> 1x1
         )
+
+        self.classifier = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear()
+        )
+
+    def forward(self, x):
+        x = self.features(x) # [batch, 256, 1, 1]
+        x = x.view(x.size(0), -1) # Flatten to: [batch, 256]
+        x = self.classifier(x) # Output: [batch, 2]
+        return x
