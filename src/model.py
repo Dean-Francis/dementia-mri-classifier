@@ -31,7 +31,7 @@ class DementiaCNN(nn.Module):
             nn.Linear(256, 128),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear()
+            nn.Linear(128, 2)
         )
 
     def forward(self, x):
