@@ -3,14 +3,15 @@ from pathlib import Path
 import nibabel as nib 
 import numpy as np
 from PIL import Image
+from typing import Any
 
-def extract_slices(data_root, output_dir, cdr_threshold=0):
-    os.makedirs(os.path.join(output_dir, 'CN'), exist_ok=True)
-    os.makedirs(os.path.join(output_dir, 'AD'), exist_ok=True)
+def extract_slices(data_root: Path, output_dir: Path, cdr_threshold=0):
+    output_dir.joinpath("CN").mkdir(exist_ok=True)
+    output_dir.joinpath("AD").mkdir(exist_ok=True)
 
     slice_count = {'CN': 0, 'AD': 0}
 
-    subject_folders = sorted(Path(data_root).glob('OAS1_*_MR1'))
+    subject_folders = sorted(data_root.glob('OAS1_*_MR1'))
     print(f"Found {len(subject_folders)} subjects")
 
     for subject_folder in subject_folders:
@@ -46,8 +47,8 @@ def extract_slices(data_root, output_dir, cdr_threshold=0):
         print(f"Processing {subject_id} CDR: {cdr}, label: {label}")
 
         # CACHING Check if we already processed this subject
-        output_folder = os.path.join(output_dir, label)
-        existing_slices = [f for f in os.listdir(output_folder) if f.startswith(subject_id)]
+        output_folder = output_dir / label
+        existing_slices = [f for f in output_folder.iterdir() if f.name.startswith(subject_id)]
         
         if existing_slices:
             print(f"Already processed ({len(existing_slices)} slices found) - skipping")
@@ -64,15 +65,18 @@ def extract_slices(data_root, output_dir, cdr_threshold=0):
 
         try:
             # Load the MRI Scan
-            img_data = nib.load(str(img_files[0]))
-            volume = img_data.get_fdata()
+            img_data = nib.load(img_files[0])
+            volume: np.ndarray[Any, np.dtype[np.floating]] = img_data.get_fdata()
             
             # Remove Singleton Dimensions
             volume = np.squeeze(volume)
 
             print("Brain succesfully loaded. Extracting slices...")
-            
-            volume = (volume - volume.min()) / (volume.max() - volume.min() + 1e-8)
+            if volume.min() == volume.max():
+                print(f"Empty Brain Scan: Skipping {subject_id}")
+                continue
+
+            volume = (volume - volume.min()) / (volume.max() - volume.min())
             volume = (volume * 255).astype(np.uint8)
 
             num_slices = volume.shape[2]
@@ -86,7 +90,7 @@ def extract_slices(data_root, output_dir, cdr_threshold=0):
                     continue
 
                 filename = f"{subject_id}_slice{slice_idx:03d}.png"
-                filepath = os.path.join(output_dir, label, filename)
+                filepath = output_dir / label / filename
                 
                 # Save as PNG
                 img_pil = Image.fromarray(slice_2d, mode='L')
