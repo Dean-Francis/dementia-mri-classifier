@@ -11,28 +11,24 @@ class DementiaCNN(nn.Module):
             nn.Conv2d(1, 16, kernel_size=3, padding=1),
             nn.BatchNorm2d(16),
             nn.ReLU(),
-            nn.Dropout2d(0.1),  # Light regularization: Drop 10% of feature maps
             nn.MaxPool2d(2, 2),  # 224x224 -> 112x112
 
             # Conv Block 2: 16 -> 32 channels (reduced from 64)
             nn.Conv2d(16, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
-            nn.Dropout2d(0.1),  # Light regularization: Drop 10% of feature maps
             nn.MaxPool2d(2, 2),  # 112x112 -> 56x56
 
             # Conv Block 3: 32 -> 64 channels (reduced from 128)
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.Dropout2d(0.1),  # Light regularization: Drop 10% of feature maps
             nn.MaxPool2d(2, 2),  # 56x56 -> 28x28
 
             # Conv Block 4: 64 -> 128 channels (reduced from 256)
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.Dropout2d(0.1),  # Light regularization: Drop 10% of feature maps
             nn.AdaptiveAvgPool2d((1, 1))  # 28x28 -> 1x1
         )
 

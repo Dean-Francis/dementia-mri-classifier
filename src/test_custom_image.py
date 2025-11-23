@@ -29,8 +29,7 @@ def predict_image(image_path, model, device, transform):
     image = Image.open(image_path).convert('L')  # Convert to grayscale
     image_tensor = transform(image).unsqueeze(0)  # Add batch dimension
 
-    # Make prediction
-    model.eval()
+    # Make prediction (model already in eval mode from main())
     with torch.no_grad():
         image_tensor = image_tensor.to(device)
         outputs = model(image_tensor)
@@ -73,9 +72,10 @@ def main():
     # Load trained model
     print("Loading trained model...")
     model = DementiaCNN().to(device)
-    model.load_state_dict(torch.load('best_model.pth'))
-    model.eval()
-    print("Model loaded successfully!\n")
+    model.load_state_dict(torch.load('best_model.pth', map_location=device))
+    model.eval()  # CRITICAL: Disable dropout and batch norm training mode
+    print("Model loaded successfully!")
+    print(f"Model in eval mode: {not model.training}\n")
 
     # Transform (same as training)
     transform = transforms.Compose([
