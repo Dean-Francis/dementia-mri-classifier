@@ -9,13 +9,11 @@ import torchvision.transforms as transforms
 from pathlib import Path
 import sys
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent))
-
-from data_extraction import extract_slices
-from dataset import MRIDataset
-from model import DementiaCNN
-from train import train_model
+from src.data_extraction import extract_slices
+from src.dataset import MRIDataset
+from src.model import DementiaCNN
+from src.train import train_model
+from src.integrated_gradients import compute_integrated_gradients
 
 
 def main():
@@ -24,8 +22,9 @@ def main():
     print("=" * 70)
 
     # Paths
-    data_root = r'c:\Users\user\Desktop\Year 4\Data Mining\dataset\disc1'
-    output_dir = 'oasis_slices'
+    root_dir = Path("dataset")
+    data_root = root_dir / "disc1"
+    output_dir = root_dir / "processed" / "oasis_slices"
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     print(f"\nDevice: {device}")
@@ -114,7 +113,8 @@ def main():
             print(f"  Epoch {epoch}: Train={train_loss:.4f}, Val={val_loss:.4f}")
 
         print("\n[SUCCESS] Training with real data completed successfully!")
-        return True
+        
+        
 
     except Exception as e:
         print(f"\n[ERROR] Training failed: {e}")
@@ -125,4 +125,4 @@ def main():
 
 if __name__ == "__main__":
     success = main()
-    sys.exit(0 if success else 1)
+    print(success)

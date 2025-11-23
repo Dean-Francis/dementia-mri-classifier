@@ -1,41 +1,50 @@
 import torch
-from torch import nn
+import torch.nn as nn
+import torch.nn.functional as F
+
 
 class DementiaCNN(nn.Module):
     def __init__(self):
         super().__init__()
 
+        # -------------------------
+        # Feature Extractor (CNN)
+        # -------------------------
         self.features = nn.Sequential(
-            # Conv Block 1: 1 -> 32 channels
             nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),  # 224x224 -> 112x112
-            
-            # Conv Block 2: 32 -> 64 channels
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),               # 112 × 112
+
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),  # 112x112 -> 56x56
-            
-            # Conv Block 3: 64 -> 128 channels
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),               # 56 × 56
+
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(2, 2),  # 56x56 -> 28x28
-            
-            # Conv Block 4: 128 -> 256 channels
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(2, 2),               # 28 × 28
+
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1))  # 28x28 -> 1x1
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d((1, 1))     # → (256, 1, 1)
         )
 
+        # -------------------------
+        # Classifier (Fully Connected)
+        # -------------------------
         self.classifier = nn.Sequential(
+            nn.Flatten(),                     # → (batch, 256)
+            nn.Dropout(0.4),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(128, 2) # Raw scores for CN and AD (model believes the input image belings to class 0/1 based on the output of this)
+            nn.Dropout(0.4),
+            nn.Linear(128, 1)                 # Binary output logit
         )
 
     def forward(self, x):
-        x = self.features(x) # [batch, 256, 1, 1]
-        x = x.view(x.size(0), -1) # Flatten to: [batch, 256]
-        x = self.classifier(x) # Output: [batch, 2]
-        return x # logits
+        x = self.features(x)   # → (batch, 256, 1, 1)
+        x = self.classifier(x) # → (batch, 1)
+        return x

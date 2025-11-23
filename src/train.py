@@ -1,117 +1,92 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from typing import Any
+from torch.utils.data import DataLoader
 
-def train_model(model, train_loader, val_loader, epochs=20, device='cpu'):
-    """
-    Train the CNN model on dementia
+DeviceLikeType = str | torch.device | int
 
-    Args:
-    model (nn.Module): The Dementia model to train
-    train_loader (DataLoader): for training data (80%) -> The model learns from the images
-    val_loader (DataLoader): for validation data (20%) -> Model is tested on these images
-    We're keeping a 80/20 split
-    epochs (int): Number of training epochs (default: 20)
-    device (str): Device to train on cpu (This will be the default if GPU doesn't work)
-
-    Returns:
-        tuple: (train_losses, val_losses) - list of loss values per epoch
-    """
-    
-    # Loss function for binary classification
-    # A loss function is a way for a neural network to measure how wrong its predictions are compared to the true labels.
-        # measures how far predicted probability is from the true label
-    # Binary classification: only 2 classes (AD vs CN)
-    # Smaller loss = better predictions
-
-    # Turns logits into probabilities
-    # Negative log-likelyhood: Penalizes the network if the predicted probability for the correct class is low.
-    # Applies softmax to logbits (turns logbit values into probabilities)
-    # Computes negative log-likelihood of the true class: gives a loss value
-    # Will be used for backpropagation
-    # It checks how confident the model is about the correct class
-    criterion = nn.CrossEntropyLoss()
-
-    # This is where the model learns
-    # When your model makes a prediction, it's usually wrong initially
-    # The loss function (CrossEntropyLoss()) tells us how wrong
-    # But that something has to fix the model after every mistake
-    # That something is the optimizer
-    # It takes the loss and adjusts the model's weights so next time the prediction is closer to correct
-    optimizer = optim.Adam(model.parameters(), lr = 0.001)
-
-    # Learning rate scheduler: reduces learning rate if validation loss plateaus
-    # This helps fine-tune the model after initial learning phases
+def train_model(
+    model: nn.Module,
+    train_loader: DataLoader[Any],
+    val_loader: DataLoader[Any],
+    epochs: int = 20,
+    device: DeviceLikeType = 'cpu'
+):
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
-        mode='min',           # Minimize validation loss
-        factor=0.5,           # Reduce LR by 50%
-        patience=3            # Wait 3 epochs before reducing
+        mode='min',
+        factor=0.5,
+        patience=3
     )
 
-    # Lists to track losses for plotting and analysis
+    model.to(device)
+
     train_losses = []
     val_losses = []
 
-    # Training loop: iterate through epochs
+    # these will store the last epoch's val accuracy
+    last_val_correct = 0
+    last_val_total = 0
+
     for epoch in range(epochs):
-        # ===== TRAINING PHASE =====
-        model.train()  # Set model to training mode (enables dropout, batch norm updates)
+        # ===== TRAIN =====
+        model.train()
         train_loss = 0.0
 
         for images, labels in train_loader:
-            # Move data to device (GPU or CPU)
-            images, labels = images.to(device), labels.to(device)
+            images = images.to(device)
+            labels = labels.float().unsqueeze(1).to(device)  # (B,1)
 
-            # Forward pass: compute predictions
-            outputs = model(images)
-
-            # Compute loss: how wrong are the predictions?
+            outputs = model(images)              # logits (B,1)
             loss = criterion(outputs, labels)
 
-            # Backward pass: compute gradients
-            # zero_grad() clears old gradients (important before each iteration)
             optimizer.zero_grad()
             loss.backward()
-
-            # Update weights: adjust model parameters to reduce loss
             optimizer.step()
 
-            # Accumulate loss for averaging
             train_loss += loss.item()
 
-        # Average training loss for this epoch
         train_loss /= len(train_loader)
         train_losses.append(train_loss)
 
-        # ===== VALIDATION PHASE =====
-        model.eval()  # Set model to evaluation mode (disables dropout, freezes batch norm)
+        # ===== VALIDATION =====
+        model.eval()
         val_loss = 0.0
+        val_correct = 0
+        val_total = 0
 
-        with torch.no_grad():  # Disable gradient computation (faster, uses less memory)
+        with torch.no_grad():
             for images, labels in val_loader:
-                # Move data to device
-                images, labels = images.to(device), labels.to(device)
+                images = images.to(device)
+                labels = labels.float().unsqueeze(1).to(device)
 
-                # Forward pass
-                outputs = model(images)
-
-                # Compute loss (but don't backprop)
+                outputs = model(images)          # logits
                 loss = criterion(outputs, labels)
-
-                # Accumulate loss
                 val_loss += loss.item()
 
-        # Average validation loss for this epoch
+                # accuracy
+                probs = torch.sigmoid(outputs)   # (B,1)
+                preds = (probs >= 0.5).float()   # (B,1) in {0,1}
+                val_correct += (preds == labels).sum().item()
+                val_total += labels.size(0)      # batch size
+
         val_loss /= len(val_loader)
         val_losses.append(val_loss)
-
-        # Update learning rate based on validation loss
         scheduler.step(val_loss)
 
-        # Print progress every 5 epochs
+        last_val_correct = val_correct
+        last_val_total = val_total
+
         if (epoch + 1) % 5 == 0:
-            print(f"Epoch {epoch+1}/{epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+            val_acc = val_correct / val_total if val_total > 0 else 0.0
+            print(
+                f"Epoch {epoch+1}/{epochs} - "
+                f"Train Loss: {train_loss:.4f}, "
+                f"Val Loss: {val_loss:.4f}, "
+                f"Val Acc: {val_acc:.4f}"
+            )
 
-    return train_losses, val_losses
-
+    return train_losses, val_losses, last_val_correct, last_val_total

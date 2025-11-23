@@ -4,12 +4,13 @@ import nibabel as nib
 import numpy as np
 from PIL import Image
 from typing import Any
+from collections import Counter
 
-def extract_slices(data_root: Path, output_dir: Path, cdr_threshold=0):
-    output_dir.joinpath("CN").mkdir(exist_ok=True)
-    output_dir.joinpath("AD").mkdir(exist_ok=True)
+def extract_slices(data_root: Path, output_dir: Path, cdr_threshold=0) -> Counter:
+    output_dir.joinpath("CN").mkdir(parents=True, exist_ok=True)
+    output_dir.joinpath("AD").mkdir(parents=True, exist_ok=True)
 
-    slice_count = {'CN': 0, 'AD': 0}
+    slice_count = Counter({'CN': 0, 'AD': 0})
 
     subject_folders = sorted(data_root.glob('OAS1_*_MR1'))
     print(f"Found {len(subject_folders)} subjects")
@@ -46,18 +47,23 @@ def extract_slices(data_root: Path, output_dir: Path, cdr_threshold=0):
 
         print(f"Processing {subject_id} CDR: {cdr}, label: {label}")
 
+        subject_slices_folder = output_dir / label / subject_id
         # CACHING Check if we already processed this subject
-        output_folder = output_dir / label
-        existing_slices = [f for f in output_folder.iterdir() if f.name.startswith(subject_id)]
+        #TODO: Redo Caching
         
-        if existing_slices:
-            print(f"Already processed ({len(existing_slices)} slices found) - skipping")
-            slice_count[label] += len(existing_slices)
+        
+        if subject_slices_folder.exists():
+            slices_count = sum(1 for _ in subject_slices_folder.iterdir())
+            print(f"Already processed ({slices_count} slices found) - skipping")
+            slice_count[label] += slices_count
             continue
+        
+        subject_slices_folder.mkdir(parents=True)
+
 
         # Loading the Brain Scans
-        img_file = subject_folder / 'PROCESSED' / 'MPRAGE' / 'SUBJ_111'
-        img_files = list(img_file.glob('*.img'))
+        img_file = subject_folder / 'PROCESSED' / 'MPRAGE' / 'T88_111'
+        img_files = list(img_file.glob('*t88_gfc.hdr'))
 
         if not img_files:
             print(f"Image file cannot be found from {subject_folder}")
@@ -66,7 +72,7 @@ def extract_slices(data_root: Path, output_dir: Path, cdr_threshold=0):
         try:
             # Load the MRI Scan
             img_data = nib.load(img_files[0])
-            volume: np.ndarray[Any, np.dtype[np.floating]] = img_data.get_fdata()
+            volume: np.ndarray = img_data.get_fdata()
             
             # Remove Singleton Dimensions
             volume = np.squeeze(volume)
@@ -80,17 +86,14 @@ def extract_slices(data_root: Path, output_dir: Path, cdr_threshold=0):
             volume = (volume * 255).astype(np.uint8)
 
             num_slices = volume.shape[2]
-
+            slice_min = int(num_slices * 0.35)
+            slice_max = int(num_slices * 0.68)
             # Extract each 2D slice
-            for slice_idx in range(num_slices):
+            for slice_idx in range(slice_min, slice_max+1):
+
                 slice_2d = volume[:,:,slice_idx]
 
-                # Ignore the black spaces
-                if np.mean(slice_2d) < 10:
-                    continue
-
-                filename = f"{subject_id}_slice{slice_idx:03d}.png"
-                filepath = output_dir / label / filename
+                filepath = subject_slices_folder / f"{subject_id}_slice{slice_idx}.png"
                 
                 # Save as PNG
                 img_pil = Image.fromarray(slice_2d, mode='L')
@@ -101,7 +104,7 @@ def extract_slices(data_root: Path, output_dir: Path, cdr_threshold=0):
     
 
         except Exception as e:
-            print(e)
+            raise
             continue
 
     # Print final summary
