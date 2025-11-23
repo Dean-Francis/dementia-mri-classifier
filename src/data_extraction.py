@@ -4,7 +4,7 @@ import nibabel as nib
 import numpy as np
 from PIL import Image
 
-def extract_slices(data_root, output_dir, cdr_threshold=0):
+def extract_slices(data_root, output_dir, cdr_threshold=0, disc_max=None, disc_min=None):
     """
     Extract MRI slices from OASIS dataset.
 
@@ -12,6 +12,8 @@ def extract_slices(data_root, output_dir, cdr_threshold=0):
         data_root: Path to dataset root (e.g., ../dataset) - will find all disc1, disc2, etc.
         output_dir: Directory to save extracted slices
         cdr_threshold: CDR threshold for CN/AD classification
+        disc_max: Maximum disc number to include (e.g., disc_max=11 uses disc1-disc11, skips disc12+)
+        disc_min: Minimum disc number to include (e.g., disc_min=12 uses only disc12+)
     """
     os.makedirs(os.path.join(output_dir, 'CN'), exist_ok=True)
     os.makedirs(os.path.join(output_dir, 'AD'), exist_ok=True)
@@ -25,6 +27,24 @@ def extract_slices(data_root, output_dir, cdr_threshold=0):
     if not disc_dirs:
         # If no disc folders found, treat the input as a single disc
         disc_dirs = [data_root_path]
+
+    # Filter discs by min/max number if specified
+    if disc_min is not None or disc_max is not None:
+        filtered_discs = []
+        for disc_dir in disc_dirs:
+            try:
+                disc_num = int(disc_dir.name[4:])  # Extract number from 'disc1', 'disc2', etc.
+                within_range = True
+                if disc_min is not None and disc_num < disc_min:
+                    within_range = False
+                if disc_max is not None and disc_num > disc_max:
+                    within_range = False
+                if within_range:
+                    filtered_discs.append(disc_dir)
+            except (ValueError, IndexError):
+                # If can't parse disc number, include it
+                filtered_discs.append(disc_dir)
+        disc_dirs = filtered_discs
 
     print(f"Found {len(disc_dirs)} disc(s): {[d.name for d in disc_dirs]}")
 

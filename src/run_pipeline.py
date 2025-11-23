@@ -15,7 +15,7 @@ from model import DementiaCNN
 from train import train_model
 
 
-def main():
+def main(disc_max=None):
     print("=" * 70)
     print("DEMENTIA DETECTION PIPELINE")
     print("=" * 70)
@@ -29,14 +29,17 @@ def main():
 
     print(f"\nDevice: {device}")
     print(f"Batch size: {batch_size}")
-    print(f"Epochs: {epochs}\n")
+    print(f"Epochs: {epochs}")
+    if disc_max is not None:
+        print(f"Training discs: disc1-disc{disc_max} (disc{disc_max+1}+ will be excluded)")
+    print()
 
     # Step 1: Extract slices
     print("=" * 70)
     print("STEP 1: EXTRACTING MRI SLICES")
     print("=" * 70)
 
-    slice_count = extract_slices(data_root, output_dir, cdr_threshold=0)
+    slice_count = extract_slices(data_root, output_dir, cdr_threshold=0, disc_max=disc_max)
 
     # Check if we have data
     total_slices = slice_count['CN'] + slice_count['AD']
@@ -173,4 +176,17 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    disc_max = None
+    if len(sys.argv) > 1:
+        try:
+            disc_max = int(sys.argv[1])
+            print(f"Command-line argument: disc_max={disc_max}\n")
+        except ValueError:
+            print(f"Invalid disc_max value: {sys.argv[1]}")
+            print("Usage: python run_pipeline.py [disc_max]")
+            print("Example: python run_pipeline.py 11  # Train on disc1-disc11")
+            sys.exit(1)
+
+    main(disc_max=disc_max)
