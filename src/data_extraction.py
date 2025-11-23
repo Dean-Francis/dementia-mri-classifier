@@ -1,104 +1,129 @@
 import os
 from pathlib import Path
-import nibabel as nib 
+import nibabel as nib
 import numpy as np
 from PIL import Image
 
 def extract_slices(data_root, output_dir, cdr_threshold=0):
+    """
+    Extract MRI slices from OASIS dataset.
+
+    Args:
+        data_root: Path to dataset root (e.g., ../dataset) - will find all disc1, disc2, etc.
+        output_dir: Directory to save extracted slices
+        cdr_threshold: CDR threshold for CN/AD classification
+    """
     os.makedirs(os.path.join(output_dir, 'CN'), exist_ok=True)
     os.makedirs(os.path.join(output_dir, 'AD'), exist_ok=True)
 
     slice_count = {'CN': 0, 'AD': 0}
 
-    subject_folders = sorted(Path(data_root).glob('OAS1_*_MR1'))
-    print(f"Found {len(subject_folders)} subjects")
+    # Find all disc directories (disc1, disc2, disc3, etc.)
+    data_root_path = Path(data_root)
+    disc_dirs = sorted([d for d in data_root_path.glob('disc*') if d.is_dir()])
 
-    for subject_folder in subject_folders:
-        subject_id = subject_folder.name
+    if not disc_dirs:
+        # If no disc folders found, treat the input as a single disc
+        disc_dirs = [data_root_path]
 
-        txt_file = subject_folder / f"{subject_id}.txt"
+    print(f"Found {len(disc_dirs)} disc(s): {[d.name for d in disc_dirs]}")
 
-        if not txt_file.exists():
-            print(f"Text file does not exist for {subject_id}")
-            continue
+    for disc_dir in disc_dirs:
+        print(f"\nProcessing {disc_dir.name}...")
+        subject_folders = sorted(disc_dir.glob('OAS1_*_MR1'))
+        print(f"  Found {len(subject_folders)} subjects")
 
-        cdr = None
-        with open(txt_file, 'r') as f:
-            for line in f:
-                if 'CDR: ' in line:
-                    cdr_str = line.split(':')[1].strip()
-                    if cdr_str:  # Make sure it's not empty
-                        cdr = float(cdr_str)
-                    break
-        
-        if cdr is None:
-            print(f"Skipping {subject_id}: CDR not found")
-            continue
+        for subject_folder in subject_folders:
+            subject_id = subject_folder.name
 
-        # CDR = Clinical Dementia Rating
-        # cdr = 0 -> Control/Normal
-        # cdr = 0.5 -> Very Mild Dementia (AD)
-        # cdr = 1.0 -> Mild Demntia (AD)
-        # cdr = 2.0 -> Moderate Demntia (AD)
-        # cdr = 3.0 -> Severe Dementia (AD)
-        label = 'CN' if cdr <= cdr_threshold else 'AD'
+            txt_file = subject_folder / f"{subject_id}.txt"
 
-        print(f"Processing {subject_id} CDR: {cdr}, label: {label}")
+            if not txt_file.exists():
+                print(f"Text file does not exist for {subject_id}")
+                continue
 
-        # CACHING Check if we already processed this subject
-        output_folder = os.path.join(output_dir, label)
-        existing_slices = [f for f in os.listdir(output_folder) if f.startswith(subject_id)]
-        
-        if existing_slices:
-            print(f"Already processed ({len(existing_slices)} slices found) - skipping")
-            slice_count[label] += len(existing_slices)
-            continue
+            cdr = None
+            with open(txt_file, 'r') as f:
+                for line in f:
+                    if 'CDR: ' in line:
+                        cdr_str = line.split(':')[1].strip()
+                        if cdr_str:  # Make sure it's not empty
+                            cdr = float(cdr_str)
+                        break
 
-        # Loading the Brain Scans
-        img_file = subject_folder / 'PROCESSED' / 'MPRAGE' / 'SUBJ_111'
-        img_files = list(img_file.glob('*.img'))
+            if cdr is None:
+                print(f"Skipping {subject_id}: CDR not found")
+                continue
 
-        if not img_files:
-            print(f"Image file cannot be found from {subject_folder}")
-            continue
+            # CDR = Clinical Dementia Rating
+            # cdr = 0 -> Control/Normal
+            # cdr = 0.5 -> Very Mild Dementia (AD)
+            # cdr = 1.0 -> Mild Demntia (AD)
+            # cdr = 2.0 -> Moderate Demntia (AD)
+            # cdr = 3.0 -> Severe Dementia (AD)
+            label = 'CN' if cdr <= cdr_threshold else 'AD'
 
-        try:
-            # Load the MRI Scan
-            img_data = nib.load(str(img_files[0]))
-            volume = img_data.get_fdata()
-            
-            # Remove Singleton Dimensions
-            volume = np.squeeze(volume)
+            print(f"Processing {subject_id} CDR: {cdr}, label: {label}")
 
-            print("Brain succesfully loaded. Extracting slices...")
-            
-            volume = (volume - volume.min()) / (volume.max() - volume.min() + 1e-8)
-            volume = (volume * 255).astype(np.uint8)
+            # CACHING Check if we already processed this subject
+            output_folder = os.path.join(output_dir, label)
+            existing_slices = [f for f in os.listdir(output_folder) if f.startswith(subject_id)]
 
-            num_slices = volume.shape[2]
+            if existing_slices:
+                print(f"Already processed ({len(existing_slices)} slices found) - skipping")
+                slice_count[label] += len(existing_slices)
+                continue
 
-            # Extract each 2D slice
-            for slice_idx in range(num_slices):
-                slice_2d = volume[:,:,slice_idx]
+            # Loading the Brain Scans
+            img_file = subject_folder / 'PROCESSED' / 'MPRAGE' / 'SUBJ_111'
+            img_files = list(img_file.glob('*.img'))
 
-                # Ignore the black spaces
-                if np.mean(slice_2d) < 10:
-                    continue
+            if not img_files:
+                print(f"Image file cannot be found from {subject_folder}")
+                continue
 
-                filename = f"{subject_id}_slice{slice_idx:03d}.png"
-                filepath = os.path.join(output_dir, label, filename)
-                
-                # Save as PNG
-                img_pil = Image.fromarray(slice_2d, mode='L')
-                img_pil.save(filepath)
-                
-                slice_count[label] += 1
-                
-    
+            try:
+                # Load the MRI Scan
+                img_data = nib.load(str(img_files[0]))
+                volume = img_data.get_fdata()
 
-        except Exception as e:
-            print(e)
-            continue
+                # Remove Singleton Dimensions
+                volume = np.squeeze(volume)
+
+                print("Brain succesfully loaded. Extracting slices...")
+
+                volume = (volume - volume.min()) / (volume.max() - volume.min() + 1e-8)
+                volume = (volume * 255).astype(np.uint8)
+
+                num_slices = volume.shape[2]
+
+                # Extract each 2D slice
+                for slice_idx in range(num_slices):
+                    slice_2d = volume[:,:,slice_idx]
+
+                    # Quality filtering: keep only slices with meaningful brain tissue
+                    mean_intensity = np.mean(slice_2d)
+                    std_intensity = np.std(slice_2d)
+
+                    # Skip if:
+                    # - Too dark (mean < 30): mostly air/skull edges with minimal brain tissue
+                    # - Too bright (mean > 180): overexposed or artifact
+                    # - No contrast (std < 20): uniform slice with no useful information
+                    if mean_intensity < 30 or mean_intensity > 180 or std_intensity < 20:
+                        continue
+
+                    filename = f"{subject_id}_slice{slice_idx:03d}.png"
+                    filepath = os.path.join(output_dir, label, filename)
+
+                    # Save as PNG
+                    img_pil = Image.fromarray(slice_2d, mode='L')
+                    img_pil.save(filepath)
+
+                    slice_count[label] += 1
+
+            except Exception as e:
+                print(e)
+                continue
 
     # Print final summary
     print(f"\n{'='*50}")
