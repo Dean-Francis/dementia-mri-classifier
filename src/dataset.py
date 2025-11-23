@@ -49,12 +49,16 @@ class MRIDataset(Dataset):
         # Additional augmentation for training robustness
         if self.augment:
             self.augmentation = transforms.Compose([
+                # BALANCED AUGMENTATION to help generalization
                 transforms.RandomAffine(
-                    degrees=10,           # Random rotation ±10 degrees
-                    translate=(0.1, 0.1), # Random translation
-                    scale=(0.9, 1.1)      # Random scaling
+                    degrees=15,            # Moderate rotation ±15 degrees (increased from 10)
+                    translate=(0.12, 0.12), # Moderate translation 12% (increased from 10%)
+                    scale=(0.9, 1.1)       # Keep original scaling range
                 ),
                 transforms.RandomHorizontalFlip(p=0.5),  # Random horizontal flip
+
+                # Light intensity augmentation to reduce reliance on subject-specific contrast
+                transforms.ColorJitter(brightness=0.15, contrast=0.15),
             ])
         else:
             self.augmentation = None

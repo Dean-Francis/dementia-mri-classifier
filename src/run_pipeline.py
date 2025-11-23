@@ -23,8 +23,8 @@ def main():
     # Configuration
     data_root = r'../dataset'  # Will automatically find all disc1, disc2, etc.
     output_dir = '../oasis_slices'
-    batch_size = 16  # Reduced from 32 for better class balance in batches
-    epochs = 25  # Reduced from 50 to prevent overfitting (early stopping at ~23 was optimal)
+    batch_size = 32  # Increased for larger dataset (disc1-disc12)
+    epochs = 50  # With more data, can train longer without overfitting
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     print(f"\nDevice: {device}")

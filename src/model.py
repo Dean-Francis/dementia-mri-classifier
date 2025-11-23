@@ -7,39 +7,43 @@ class DementiaCNN(nn.Module):
         super().__init__()
 
         self.features = nn.Sequential(
-            # Conv Block 1: 1 -> 32 channels
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),  # Stabilizes training
+            # Conv Block 1: 1 -> 16 channels (reduced from 32 to reduce params)
+            nn.Conv2d(1, 16, kernel_size=3, padding=1),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
+            nn.Dropout2d(0.1),  # Light regularization: Drop 10% of feature maps
             nn.MaxPool2d(2, 2),  # 224x224 -> 112x112
 
-            # Conv Block 2: 32 -> 64 channels
+            # Conv Block 2: 16 -> 32 channels (reduced from 64)
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.Dropout2d(0.1),  # Light regularization: Drop 10% of feature maps
+            nn.MaxPool2d(2, 2),  # 112x112 -> 56x56
+
+            # Conv Block 3: 32 -> 64 channels (reduced from 128)
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
-            nn.MaxPool2d(2, 2),  # 112x112 -> 56x56
+            nn.Dropout2d(0.1),  # Light regularization: Drop 10% of feature maps
+            nn.MaxPool2d(2, 2),  # 56x56 -> 28x28
 
-            # Conv Block 3: 64 -> 128 channels
+            # Conv Block 4: 64 -> 128 channels (reduced from 256)
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
-            nn.MaxPool2d(2, 2),  # 56x56 -> 28x28
-
-            # Conv Block 4: 128 -> 256 channels
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
+            nn.Dropout2d(0.1),  # Light regularization: Drop 10% of feature maps
             nn.AdaptiveAvgPool2d((1, 1))  # 28x28 -> 1x1
         )
 
         self.classifier = nn.Sequential(
-            nn.Linear(256, 128),
+            nn.Linear(128, 64),  # Reduced from 256->128
             nn.ReLU(),
-            nn.Dropout(0.5),  # Increased from 0.4 to reduce overfitting
-            nn.Linear(128, 64),
+            nn.Dropout(0.5),
+            nn.Linear(64, 32),   # Reduced from 128->64
             nn.ReLU(),
-            nn.Dropout(0.4),  # Increased from 0.2 to reduce overfitting
-            nn.Linear(64, 2)  # Raw logits for CN and AD
+            nn.Dropout(0.5),
+            nn.Linear(32, 2)  # Raw logits for CN and AD
         )
 
         # Initialize weights using He initialization (optimal for ReLU)

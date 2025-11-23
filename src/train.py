@@ -58,10 +58,11 @@ def train_model(model, train_loader, val_loader, epochs=20, device='cpu',
     # Loss function for binary classification
     # CrossEntropyLoss: combines LogSoftmax and NLLLoss
     # Measures how far predicted probability is from true label
+    # label_smoothing=0.05 prevents overconfident predictions (light touch to avoid over-suppressing learning)
     if use_class_weights and class_weights is not None:
-        criterion = nn.CrossEntropyLoss(weight=class_weights.to(device))
+        criterion = nn.CrossEntropyLoss(weight=class_weights.to(device), label_smoothing=0.05)
     else:
-        criterion = nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss(label_smoothing=0.05)
 
     # Optimizer: adjusts model weights to reduce loss
     # Adam: adaptive learning rate with momentum
