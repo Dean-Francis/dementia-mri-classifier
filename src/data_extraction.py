@@ -80,7 +80,6 @@ def extract_slices(data_root, output_dir, cdr_threshold=0, disc_max=None, disc_m
             # cdr = 0.5 -> Very Mild Dementia (AD)
             # cdr = 1.0 -> Mild Demntia (AD)
             # cdr = 2.0 -> Moderate Demntia (AD)
-            # cdr = 3.0 -> Severe Dementia (AD)
             label = 'CN' if cdr <= cdr_threshold else 'AD'
 
             print(f"Processing {subject_id} CDR: {cdr}, label: {label}")
